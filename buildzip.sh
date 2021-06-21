@@ -42,6 +42,29 @@ ak3-stripinstaller() {
   sed -i 's|\s"\s"| |g;s/ui_print \" \"\;//;' $1
 }
 
+_flash_from_rec() {
+  read -p ":: Flash from recovery ? (y/n) > " ASKREC
+  if [[ $ASKREC =~ ^[Yy]$ ]]; then
+    echo ":: Rebooting to recovery..."
+    adb reboot recovery
+    echo ":: Waiting the recovery..."
+    adb wait-for-recovery
+    echo ":: Begin installation..."
+    adb push $SELFPATH/$zipname /cache/kernel.zip
+    adb shell "twrp install /cache/kernel.zip; rm /cache/kernel.zip"
+    read -p ":: reboot the device ? (y/n) > " ASKREBOOT
+    [[ $ASKREBOOT =~ ^[Yy]$ ]] && adb reboot
+  fi
+}
+
+_push_to_device() {
+  if [[ "$(adb get-state)" != "offline" ]]; then
+    read -p ":: Push $zipname to /sdcard/ ? (y/n) > " ASKPUSH
+    [[ $ASKPUSH =~ ^[Yy]$ ]] && adb push $SELFPATH/$zipname /sdcard/
+    _flash_from_rec
+  fi
+}
+
 main() {
   echo "building $zipname..."
 
@@ -79,6 +102,8 @@ main() {
   # rm -rf $WORKDIR
   echo "done, your package are located at :"
   realpath --relative-to=. $SELFPATH/$zipname
+
+  _push_to_device
 }
 
 main $@
