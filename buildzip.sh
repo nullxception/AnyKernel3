@@ -20,7 +20,8 @@ src_dtbo=$KBUILD_OUT/arch/arm64/boot/dtbo.img
 
 # Setup file zip name
 kernelver=$(cat $KBUILD_OUT/include/generated/utsrelease.h | cut -d\" -f2 | cut -d\- -f3-)
-zipname=${kernelid// /-}-$devicename-$kernelver.zip
+datename=$(date +%B-%d |  tr '[:upper:]' '[:lower:]')
+zipname=${kernelid// /-}-$devicename-$kernelver-$datename.zip
 
 ak3-filldevices() {
   num=0
@@ -70,6 +71,7 @@ main() {
     zip -r9 -q --exclude=*placeholder $WORKDIR/$zipname *
   command popd > /dev/null
 
+  find $SELFPATH -iname "*$devicename-$kernelver*" -delete
   # copy generated zip file to ak3 dir
   cp -f $WORKDIR/$zipname $SELFPATH/
 
