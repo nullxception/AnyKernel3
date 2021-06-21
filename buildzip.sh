@@ -3,6 +3,7 @@
 # Simple script for packing chaldea kernel for android
 #
 SELFPATH=$(dirname $(realpath $0))
+REL_SELFPATH=$(realpath --relative-to=. $SELFPATH)
 
 [[ -f "$SELFPATH/buildzip.conf" ]] || { echo "missing buildzip.conf. exiting"; exit 1; }
 . $SELFPATH/buildzip.conf
@@ -23,45 +24,45 @@ kernelver=$(cat $KBUILD_OUT/include/generated/utsrelease.h | cut -d\" -f2 | cut 
 datename=$(date +%B-%d |  tr '[:upper:]' '[:lower:]')
 zipname=${kernelid// /-}-$devicename-$kernelver-$datename.zip
 
-ak3-filldevices() {
+prepare_ak3_metadata(){
+  sed -i "s|.*fstab.*$||;
+          s|.*init.*rc.*$||;
+          s|.*_perm.*amdis.*$||;
+          s|^block=.*$|block=$deviceboot|;
+          s|^device\.\(.*\)=.*$|device.\1=|;
+          s|^kernel\.string=.*$|kernel.string=$kerneldesc|;
+          s|#.*$||; s|\;$||; /^$/d;" $1
+
   num=0
-  sed -i 's/^device\.\(.*\)=.*$/device.\1=/' anykernel.sh
   for device in ${deviceids[@]};do
     num=$(($num+1))
-    sed -i "s|^device\.name$num=.*$|device.name$num=$device|" anykernel.sh
+    sed -i "s|^device\.name$num=.*$|device.name$num=$device|" $1
   done
 }
 
-ak3-makedata(){
-  sed -i 's/#.*$//;s/.*init.*rc.*$//;s/.*fstab.*$//;s/.*_perm.*amdis.*$//;s/\;$//;/^$/d' anykernel.sh
-  sed -i "s|^block=.*$|block=$deviceboot|;s|^kernel\.string=.*$|kernel.string=$kerneldesc|" anykernel.sh
-  ak3-filldevices
+prepare_ak3_installer() {
+  sed -i 's|\s"\s"| |g;s|ui_print \" \"\;||;' $1
 }
 
-ak3-stripinstaller() {
-  sed -i 's|\s"\s"| |g;s/ui_print \" \"\;//;' $1
+flash_from_rec() {
+  echo ":: Waiting the recovery..."
+  adb wait-for-recovery
+  echo ":: Begin installation..."
+  adb push $REL_SELFPATH/$zipname /cache/kernel.zip
+  adb shell "twrp install /cache/kernel.zip; rm /cache/kernel.zip"
+  read -p ":: reboot the device ? (y/n) > " ASKREBOOT
+  [[ $ASKREBOOT =~ ^[Yy]$ ]] && adb reboot
 }
 
-_flash_from_rec() {
+push_to_device() {
+  read -p ":: Push $zipname to /sdcard/ ? (y/n) > " ASKPUSH
+  [[ $ASKPUSH =~ ^[Yy]$ ]] && adb push $SELFPATH/$zipname /sdcard/
+
   read -p ":: Flash from recovery ? (y/n) > " ASKREC
   if [[ $ASKREC =~ ^[Yy]$ ]]; then
     echo ":: Rebooting to recovery..."
     adb reboot recovery
-    echo ":: Waiting the recovery..."
-    adb wait-for-recovery
-    echo ":: Begin installation..."
-    adb push $SELFPATH/$zipname /cache/kernel.zip
-    adb shell "twrp install /cache/kernel.zip; rm /cache/kernel.zip"
-    read -p ":: reboot the device ? (y/n) > " ASKREBOOT
-    [[ $ASKREBOOT =~ ^[Yy]$ ]] && adb reboot
-  fi
-}
-
-_push_to_device() {
-  if [[ "$(adb get-state)" != "offline" ]]; then
-    read -p ":: Push $zipname to /sdcard/ ? (y/n) > " ASKPUSH
-    [[ $ASKPUSH =~ ^[Yy]$ ]] && adb push $SELFPATH/$zipname /sdcard/
-    _flash_from_rec
+    flash_from_rec
   fi
 }
 
@@ -88,9 +89,9 @@ main() {
 
   # creating zip file
   command pushd "$WORKDIR" > /dev/null
-    ak3-stripinstaller META-INF/com/google/android/update-binary
-    ak3-stripinstaller tools/ak3-core.sh
-    ak3-makedata
+    prepare_ak3_installer META-INF/com/google/android/update-binary
+    prepare_ak3_installer tools/ak3-core.sh
+    prepare_ak3_metadata anykernel.sh
     zip -r9 -q --exclude=*placeholder $WORKDIR/$zipname *
   command popd > /dev/null
 
@@ -99,11 +100,10 @@ main() {
   cp -f $WORKDIR/$zipname $SELFPATH/
 
   # cleanup working directory
-  # rm -rf $WORKDIR
-  echo "done, your package are located at :"
-  realpath --relative-to=. $SELFPATH/$zipname
+  rm -rf $WORKDIR
+  echo "done, your package are located at : $REL_SELFPATH/$zipname"
 
-  _push_to_device
+  push_to_device
 }
 
 main $@
