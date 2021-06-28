@@ -16,7 +16,7 @@ fi
 [[ -f "$KBUILD_OUT/include/generated/utsrelease.h" ]] || { echo "missing $KBUILD_OUT. exiting"; exit 1; }
 
 # get kernel and dtbo directly from KBUILD_OUT
-src_kernel=$KBUILD_OUT/arch/arm64/boot/Image.gz-dtb
+src_kernel=$KBUILD_OUT/arch/arm64/boot/Image
 src_dtbo=$KBUILD_OUT/arch/arm64/boot/dtbo.img
 
 # Requirement checking
@@ -27,6 +27,18 @@ src_dtbo=$KBUILD_OUT/arch/arm64/boot/dtbo.img
 kernelver=$(cat $KBUILD_OUT/include/generated/utsrelease.h | cut -d\" -f2 | cut -d\- -f3-)
 datename=$(date +%B-%d |  tr '[:upper:]' '[:lower:]')
 zipname=${kernelid// /-}-$devicename-$kernelver-$datename.zip
+
+create_dtb() {
+  target=$1
+
+  if [[ -f "$target" ]]; then
+    # clean up it first
+    rm $target
+  fi
+  find $KBUILD_OUT/arch/arm64/boot/dts -iname '*.dtb' | while read dt; do
+    cat $dt >> $target
+  done
+}
 
 prepare_ak3_metadata(){
   sed -i "s|.*fstab.*$||;
@@ -122,6 +134,7 @@ main() {
     prepare_ak3_installer META-INF/com/google/android/update-binary
     prepare_ak3_installer tools/ak3-core.sh
     prepare_ak3_metadata anykernel.sh
+    create_dtb dtb.img
     zip -r9 -q --exclude=*placeholder $WORKDIR/$zipname *
   command popd > /dev/null
 
