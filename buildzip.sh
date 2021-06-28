@@ -5,6 +5,10 @@
 SELFPATH=$(dirname $(realpath $0))
 REL_SELFPATH=$(realpath --relative-to=. $SELFPATH)
 
+if [[ "$1" == "--auto" ]]; then
+  flashmode=auto
+fi
+
 [[ -f "$SELFPATH/buildzip.conf" ]] || { echo "missing buildzip.conf. exiting"; exit 1; }
 . $SELFPATH/buildzip.conf
 
@@ -45,25 +49,51 @@ prepare_ak3_installer() {
 }
 
 flash_from_rec() {
+  if [[ "$flashmode" == "auto" ]]; then
+      echo ":: Rebooting to recovery..."
+      adb reboot recovery
+      echo ":: Waiting the recovery..."
+      adb wait-for-recovery
+      echo ":: Begin installation..."
+      adb push $REL_SELFPATH/$zipname /cache/kernel.zip
+      adb shell "twrp install /cache/kernel.zip; rm /cache/kernel.zip"
+      adb reboot
+  else
+    read -p ":: Flash from recovery ? (y/n) > " ASKREC
+    if [[ $ASKREC =~ ^[Yy]$ ]]; then
+      echo ":: Rebooting to recovery..."
+      adb reboot recovery
+    fi
+
+    echo ":: Waiting the recovery..."
+    adb wait-for-recovery
+    echo ":: Begin installation..."
+    adb push $REL_SELFPATH/$zipname /cache/kernel.zip
+    adb shell "twrp install /cache/kernel.zip; rm /cache/kernel.zip"
+    read -p ":: reboot the device ? (y/n) > " ASKREBOOT
+    [[ $ASKREBOOT =~ ^[Yy]$ ]] && adb reboot
+  fi
+}
+
+push_to_device() {
+  if [[ "$flashmode" == "auto" ]]; then
+    adb push $SELFPATH/$zipname /sdcard/
+  else
+    read -p ":: Push $zipname to /sdcard/ ? (y/n) > " ASKPUSH
+    [[ $ASKPUSH =~ ^[Yy]$ ]] && adb push $SELFPATH/$zipname /sdcard/
+  fi
+}
+
+mode_autoflash() {
+  adb push $SELFPATH/$zipname /sdcard/
+  echo ":: Rebooting to recovery..."
+  adb reboot recovery
   echo ":: Waiting the recovery..."
   adb wait-for-recovery
   echo ":: Begin installation..."
   adb push $REL_SELFPATH/$zipname /cache/kernel.zip
   adb shell "twrp install /cache/kernel.zip; rm /cache/kernel.zip"
-  read -p ":: reboot the device ? (y/n) > " ASKREBOOT
-  [[ $ASKREBOOT =~ ^[Yy]$ ]] && adb reboot
-}
-
-push_to_device() {
-  read -p ":: Push $zipname to /sdcard/ ? (y/n) > " ASKPUSH
-  [[ $ASKPUSH =~ ^[Yy]$ ]] && adb push $SELFPATH/$zipname /sdcard/
-
-  read -p ":: Flash from recovery ? (y/n) > " ASKREC
-  if [[ $ASKREC =~ ^[Yy]$ ]]; then
-    echo ":: Rebooting to recovery..."
-    adb reboot recovery
-    flash_from_rec
-  fi
+  adb reboot
 }
 
 main() {
@@ -104,6 +134,7 @@ main() {
   echo "done, your package are located at : $REL_SELFPATH/$zipname"
 
   push_to_device
+  flash_from_rec
 }
 
 main $@
