@@ -15,13 +15,19 @@ fi
 # KBUILD_OUT, used to get kernel, dtbo file, and version directly from it
 [[ -f "$KBUILD_OUT/include/generated/utsrelease.h" ]] || { echo "missing $KBUILD_OUT. exiting"; exit 1; }
 
-# get kernel and dtbo directly from KBUILD_OUT
-src_kernel=$KBUILD_OUT/arch/arm64/boot/Image
-src_dtbo=$KBUILD_OUT/arch/arm64/boot/dtbo.img
-
-# Requirement checking
+# get kernel directly from KBUILD_OUT
+if [[ "$appended_dtb" == "true" ]]; then
+  src_kernel=$KBUILD_OUT/arch/arm64/boot/Image.gz-dtb
+else
+  src_kernel=$KBUILD_OUT/arch/arm64/boot/Image.gz
+fi
 [[ -f "$src_kernel" ]] || { echo "src_kernel ($src_kernel) cannot be found. exiting"; exit 1; }
-[[ -f "$src_dtbo" ]] || { echo "src_dtbo ($src_dtbo) cannot be found. exiting"; exit 1; }
+
+# get dtbo directly from KBUILD_OUT
+if [[ "$with_dtbo" == "true" ]]; then
+  src_dtbo=$KBUILD_OUT/arch/arm64/boot/dtbo.img
+  [[ -f "$src_dtbo" ]] || { echo "src_dtbo ($src_dtbo) cannot be found. exiting"; exit 1; }
+fi
 
 # Setup file zip name
 kernelver=$(cat $KBUILD_OUT/include/generated/utsrelease.h | cut -d\" -f2 | cut -d\- -f3-)
@@ -30,12 +36,13 @@ zipname=${kernelid// /-}-$devicename-$kernelver-$datename.zip
 
 create_dtb() {
   target=$1
+  source_dtbs=$KBUILD_OUT/arch/arm64/boot/dts
 
   if [[ -f "$target" ]]; then
     # clean up it first
     rm $target
   fi
-  find $KBUILD_OUT/arch/arm64/boot/dts -iname '*.dtb' | while read dt; do
+  find $source_dtbs -iname '*.dtb' | while read dt; do
     cat $dt >> $target
   done
 }
@@ -116,8 +123,11 @@ main() {
           $SELFPATH/tools
           $SELFPATH/anykernel.sh
           $SELFPATH/banner
-          $src_kernel
-          $src_dtbo)
+          $src_kernel)
+
+  if [[ "$with_dtbo" == "true" ]]; then
+    sources+=($src_dtbo)
+  fi
 
   # prepare working directory in the /tmp
   WORKDIR=/tmp/build-$kernelid-$USER
@@ -134,7 +144,10 @@ main() {
     prepare_ak3_installer META-INF/com/google/android/update-binary
     prepare_ak3_installer tools/ak3-core.sh
     prepare_ak3_metadata anykernel.sh
-    create_dtb dtb.img
+    if [[ "$appended_dtb" != "true" ]]; then
+      create_dtb dtb.img
+    fi
+
     zip -r9 -q --exclude=*placeholder $WORKDIR/$zipname *
   command popd > /dev/null
 
